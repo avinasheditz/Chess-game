@@ -1,0 +1,8 @@
+{
+  "name": "Grandmaster Multiplayer Chess",
+  "description": "A premium, real-time multiplayer chess experience with private rooms, live chat, and professional-grade game mechanics. Features a minimal, distraction-free UI with hidden check alerts as per competitive standards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
