@@ -1,36 +1,55 @@
 import { useState, useEffect, useRef, FormEvent } from 'react';
-import { Socket } from 'socket.io-client';
 import { Send, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
 interface ChatProps {
-  socket: Socket;
+  playerId: string;
   roomId: string;
   playerColor: string;
 }
 
 interface Message {
-  sender: string;
+  id?: number;
   senderName: string;
   message: string;
-  timestamp: number;
+  createdAt?: string;
+  timestamp?: number;
 }
 
-export function Chat({ socket, roomId, playerColor }: ChatProps) {
+export function Chat({ playerId, roomId, playerColor }: ChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastIdRef = useRef(0);
 
   useEffect(() => {
-    socket.on('chat-received', (msg: Message) => {
-      setMessages(prev => [...prev, msg]);
-    });
-
-    return () => {
-      socket.off('chat-received');
+    const fetchMessages = async () => {
+      try {
+        const res = await fetch(`/api/chat/${roomId}?lastId=${lastIdRef.current}`);
+        if (res.ok) {
+          const newMsgs = await res.json();
+          if (newMsgs.length > 0) {
+            lastIdRef.current = newMsgs[newMsgs.length - 1].id;
+            setMessages(prev => {
+              const uniqueMsgs = [...prev];
+              newMsgs.forEach((msg: any) => {
+                if (!uniqueMsgs.some(m => m.id === msg.id)) {
+                  uniqueMsgs.push(msg);
+                }
+              });
+              return uniqueMsgs;
+            });
+          }
+        }
+      } catch (e) {}
     };
-  }, [socket]);
+
+    const interval = setInterval(fetchMessages, 2000);
+    fetchMessages();
+    
+    return () => clearInterval(interval);
+  }, [roomId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -38,7 +57,7 @@ export function Chat({ socket, roomId, playerColor }: ChatProps) {
     }
   }, [messages]);
 
-  const sendMessage = (e: FormEvent) => {
+  const sendMessage = async (e: FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
 
@@ -48,17 +67,22 @@ export function Chat({ socket, roomId, playerColor }: ChatProps) {
       senderName: playerColor.charAt(0).toUpperCase() + playerColor.slice(1)
     };
 
-    socket.emit('chat-message', msg);
-    
-    // Add locally immediately (optimistic)
-    setMessages(prev => [...prev, {
-      sender: socket.id!,
+    const optimisticMsg: Message = {
       senderName: 'You',
       message: input,
       timestamp: Date.now()
-    }]);
+    };
     
+    setMessages(prev => [...prev, optimisticMsg]);
     setInput('');
+    
+    try {
+      await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(msg)
+      });
+    } catch (e) {}
   };
 
   return (
@@ -70,20 +94,22 @@ export function Chat({ socket, roomId, playerColor }: ChatProps) {
       
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg, i) => {
-          const isMe = msg.senderName === 'You';
+          const sender = msg.senderName.toLowerCase() === playerColor.toLowerCase() || msg.senderName === 'You' ? 'You' : msg.senderName;
+          const isMe = sender === 'You';
+          const time = msg.timestamp ? new Date(msg.timestamp) : msg.createdAt ? new Date(msg.createdAt) : new Date();
           return (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              key={i}
+              key={msg.id || i}
               className={cn(
                 "flex flex-col gap-1",
                 isMe ? "items-end" : "items-start"
               )}
             >
               <div className="flex items-center gap-2 mb-1">
-                 <span className="text-[10px] font-bold uppercase tracking-wider text-white/30">{msg.senderName}</span>
-                 <span className="text-[9px] text-white/10">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                 <span className="text-[10px] font-bold uppercase tracking-wider text-white/30">{sender}</span>
+                 <span className="text-[9px] text-white/10">{time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
               <div className={cn(
                 "px-4 py-2 rounded-2xl text-sm max-w-[85%] break-words",

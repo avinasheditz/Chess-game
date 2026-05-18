@@ -4,14 +4,14 @@
  */
 
 import { useState, useEffect } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { nanoid } from 'nanoid';
 import { Lobby } from './components/Lobby';
 import { ChessGame } from './components/ChessGame';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, ChevronRight, Globe, Shield, Settings } from 'lucide-react';
 
 export default function App() {
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const [playerId, setPlayerId] = useState<string>('');
   const [gameState, setGameState] = useState<{
     roomId: string | null;
     color: 'white' | 'black' | null;
@@ -23,34 +23,60 @@ export default function App() {
   });
 
   useEffect(() => {
-    const newSocket = io();
-    setSocket(newSocket);
-
-    newSocket.on('room-created', ({ roomId, color }) => {
-      setGameState({ roomId, color, status: 'playing' });
-    });
-
-    newSocket.on('room-joined', ({ roomId, color }) => {
-      setGameState({ roomId, color, status: 'playing' });
-    });
-
-    return () => {
-      newSocket.close();
-    };
+    let id = localStorage.getItem('playerId');
+    if (!id) {
+      id = nanoid();
+      localStorage.setItem('playerId', id);
+    }
+    setPlayerId(id);
   }, []);
 
-  const handleCreateRoom = () => {
-    socket?.emit('create-room');
+  const handleCreateRoom = async () => {
+    try {
+      const res = await fetch('/api/create-room', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId })
+      });
+      const data = await res.json();
+      if (data.roomId) {
+        setGameState({ roomId: data.roomId, color: data.color, status: 'playing' });
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const handleJoinRoom = (roomId: string) => {
-    socket?.emit('join-room', roomId);
+  const handleJoinRoom = async (roomId: string) => {
+    try {
+      const res = await fetch('/api/join-room', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, playerId })
+      });
+      const data = await res.json();
+      if (data.roomId) {
+        setGameState({ roomId: data.roomId, color: data.color, status: 'playing' });
+      } else {
+        alert(data.error || 'Failed to join room');
+      }
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = async () => {
+    if (gameState.roomId) {
+      try {
+        await fetch('/api/leave-room', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId: gameState.roomId, playerId })
+        });
+      } catch (e) {}
+    }
     setGameState({ roomId: null, color: null, status: 'lobby' });
-    // Join room 0 to "leave" current room in socket logic or just rely on state
-    window.location.reload(); // Hard reset for simplicity
+    window.location.reload(); 
   };
 
   return (
@@ -119,7 +145,7 @@ export default function App() {
               transition={{ duration: 0.4 }}
             >
               <ChessGame 
-                socket={socket!} 
+                playerId={playerId}
                 roomId={gameState.roomId!} 
                 playerColor={gameState.color!} 
                 onLeave={handleLeaveRoom}
@@ -143,4 +169,3 @@ export default function App() {
     </div>
   );
 }
-
