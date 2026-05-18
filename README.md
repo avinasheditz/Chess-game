@@ -1,20 +1,149 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# ♟️ Online Multiplayer Chess Game
 
-# Run and deploy your AI Studio app
+A modern real-time multiplayer Chess Game where two players can play together from different devices using a Room Code system.
 
-This contains everything you need to run your app locally.
+The project is fully responsive, production-ready, GitHub deployable, and designed with a premium modern UI similar to professional chess platforms.
 
-View your app in AI Studio: https://ai.studio/apps/c9901a63-d431-4e98-a642-3ba7caf28d44
+---
 
-## Run Locally
+# 🚨 Important Rule
 
-**Prerequisites:**  Node.js
+This chess game must implement all official chess mechanics **EXCEPT visible “Check” or “King in danger” alerts**.
 
+The game must NOT display:
+- “Check”
+- King danger warnings
+- Flashing king effects
+- Danger highlights
+- Warning sounds
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+However, legal chess rules must still be enforced internally.
+
+---
+
+# ✨ Features
+
+## 🌐 Online Multiplayer
+- Real-time multiplayer gameplay
+- Room code system
+- Create Room functionality
+- Join Room functionality
+- Unique room generation
+- Sync moves instantly across devices
+- Prevent third-player joining
+- Auto reconnect support
+- Opponent disconnect detection
+- Rematch system
+- Leave room option
+
+---
+
+## ♟️ Chess Features
+- Full chess rules support
+- Legal move validation
+- Drag-and-drop movement
+- Mobile touch support
+- Pawn promotion popup
+- Castling
+- En passant
+- Checkmate detection
+- Stalemate detection
+- Draw conditions
+- Move history panel
+- Captured pieces display
+- Chess timers/clocks
+- Last move highlighting
+- Available move indicators
+- Undo request system
+- Restart match request system
+
+---
+
+## 🎨 UI / UX
+- Premium modern interface
+- Responsive design
+- Mobile-first layout
+- Dark/light mode
+- Smooth animations
+- Glassmorphism or minimal UI
+- Multiple board themes
+- Elegant typography
+- Player avatars
+- Connection status indicators
+- Animated transitions
+
+---
+
+## 💬 Additional Features
+- In-game chat
+- Sound effects
+- Mute/unmute option
+- Save/load matches
+- Match history
+- Replay finished games
+- PGN export/import
+- FEN support
+- Spectator mode (optional)
+
+---
+
+# 🛠️ Recommended Tech Stack
+
+## Frontend
+- React or Next.js
+- Tailwind CSS
+- react-chessboard
+- chess.js
+
+## Backend / Realtime
+Choose one:
+- Firebase Realtime Database
+- Firebase Firestore
+- Node.js + Socket.io
+
+## Deployment
+Compatible with:
+- GitHub Pages
+- Vercel
+- Netlify
+- Render
+
+---
+
+# 📁 Suggested Folder Structure
+
+```bash
+online-chess/
+│
+├── public/
+│
+├── src/
+│   ├── components/
+│   │   ├── Board/
+│   │   ├── Chat/
+│   │   ├── Room/
+│   │   ├── Timer/
+│   │   ├── Modals/
+│   │   └── UI/
+│   │
+│   ├── pages/
+│   │
+│   ├── hooks/
+│   │
+│   ├── services/
+│   │   ├── firebase/
+│   │   └── socket/
+│   │
+│   ├── utils/
+│   │
+│   ├── context/
+│   │
+│   ├── styles/
+│   │
+│   └── App.jsx
+│
+├── .env
+├── .gitignore
+├── package.json
+├── README.md
+└── tailwind.config.js
