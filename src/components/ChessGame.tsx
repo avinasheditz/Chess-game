@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Chess, Move } from 'chess.js';
 import { Chessboard } from 'react-chessboard';
-import { Socket } from 'socket.io-client';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import useSound from 'use-sound';
@@ -14,7 +13,7 @@ import { Chat } from './Chat';
 import { cn } from '../lib/utils';
 
 interface ChessGameProps {
-  socket: Socket;
+  playerId: string;
   roomId: string;
   playerColor: 'white' | 'black';
   onLeave: () => void;
@@ -25,9 +24,8 @@ const CAPTURE_SOUND = 'https://assets.mixkit.co/active_storage/sfx/2568/2568-pre
 const CHECK_SOUND = 'https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3';
 const GAME_OVER_SOUND = 'https://assets.mixkit.co/active_storage/sfx/2570/2570-preview.mp3';
 
-export function ChessGame({ socket, roomId, playerColor, onLeave }: ChessGameProps) {
+export function ChessGame({ playerId, roomId, playerColor, onLeave }: ChessGameProps) {
   const [game, setGame] = useState(new Chess());
-  const [lastMove, setLastMove] = useState<Move | null>(null);
   const [history, setHistory] = useState<Move[]>([]);
   const [isGameOver, setIsGameOver] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -49,6 +47,7 @@ export function ChessGame({ socket, roomId, playerColor, onLeave }: ChessGamePro
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const lastHistoryLengthRef = useRef(0);
 
   const turn = game.turn() === 'w' ? 'white' : 'black';
 
@@ -64,6 +63,57 @@ export function ChessGame({ socket, roomId, playerColor, onLeave }: ChessGamePro
     }
   }, [muted, playMove, playCapture, playCheck]);
 
+  useEffect(() => {
+    const fetchGame = async () => {
+      try {
+        const res = await fetch(`/api/game/${roomId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        const newGame = new Chess(data.fen);
+        setGame(newGame);
+        setHistory(data.history || []);
+        setPlayers(data.players || {});
+        
+        if (data.history && data.history.length > lastHistoryLengthRef.current) {
+          const newMove = data.history[data.history.length - 1];
+          triggerSound(newMove);
+          lastHistoryLengthRef.current = data.history.length;
+        }
+
+        if (data.status === 'finished') {
+          if (!isGameOver) {
+             setIsGameOver(true);
+             if (!muted) playGameOver();
+             setResult(data.winner ? `${data.winner} wins by ${data.reason}` : 'Draw');
+          }
+        } else {
+          setIsGameOver(false);
+          setResult(null);
+        }
+        
+        if (data.rematchRequests?.includes(playerColor === 'white' ? players.black : players.white)) {
+          setRematchRequested(true);
+        } else {
+          setRematchRequested(false);
+        }
+        
+        if (playerColor === 'white') {
+          if (data.players?.black) setOpponentName('Player Joined');
+          else setOpponentName('Waiting...');
+        } else {
+          if (data.players?.white) setOpponentName('Player Joined');
+          else setOpponentName('Waiting...');
+        }
+      } catch (e) {}
+    };
+
+    const interval = setInterval(fetchGame, 1000);
+    fetchGame();
+
+    return () => clearInterval(interval);
+  }, [roomId, isGameOver, muted, playGameOver, triggerSound, playerColor, players.white, players.black]);
+
   const analyzeGame = async () => {
     if (history.length === 0) return;
     setIsAnalyzing(true);
@@ -72,9 +122,7 @@ export function ChessGame({ socket, roomId, playerColor, onLeave }: ChessGamePro
     try {
       const response = await fetch('/api/analyze', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           history: history,
           winner: result?.includes('White') ? 'White' : result?.includes('Black') ? 'Black' : null,
@@ -87,7 +135,6 @@ export function ChessGame({ socket, roomId, playerColor, onLeave }: ChessGamePro
         setAnalysis(data.analysis);
       }
     } catch (error) {
-      console.error('Analysis failed:', error);
       setAnalysis('Failed to load analysis. Please try again.');
     } finally {
       setIsAnalyzing(false);
@@ -109,12 +156,12 @@ export function ChessGame({ socket, roomId, playerColor, onLeave }: ChessGamePro
   }, [turn, isGameOver, players]);
 
   useEffect(() => {
-    if (whiteTime === 0 || blackTime === 0) {
+    if ((whiteTime === 0 || blackTime === 0) && !isGameOver) {
       setIsGameOver(true);
       setResult(whiteTime === 0 ? "Black wins by time" : "White wins by time");
       if (!muted) playGameOver();
     }
-  }, [whiteTime, blackTime, muted, playGameOver]);
+  }, [whiteTime, blackTime, muted, playGameOver, isGameOver]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -123,76 +170,30 @@ export function ChessGame({ socket, roomId, playerColor, onLeave }: ChessGamePro
   };
   const isMyTurn = turn === playerColor;
 
-  useEffect(() => {
-    socket.on('move-sync', ({ fen, lastMove: move, history: newHistory, isGameOver, isCheckmate, isDraw }) => {
-      const newGame = new Chess(fen);
-      setGame(newGame);
-      setLastMove(move);
-      setHistory(newHistory);
-      
-      triggerSound(move);
-      
-      if (isGameOver) {
-        setIsGameOver(true);
-        if (!muted) playGameOver();
-        if (isCheckmate) {
-          setResult(`${move.color === 'w' ? 'White' : 'Black'} wins by checkmate`);
-        } else if (isDraw) {
-          setResult('Draw');
-        }
-      }
-    });
-
-    socket.on('room-joined', (data) => {
-      setGame(new Chess(data.fen));
-      setHistory(data.history);
-      setPlayers(data.players);
-    });
-
-    socket.on('player-joined', ({ color, socketId }) => {
-       setPlayers(prev => ({ ...prev, [color]: socketId }));
-    });
-
-    socket.on('game-reset', ({ fen }) => {
-      setGame(new Chess(fen));
-      setHistory([]);
-      setLastMove(null);
-      setIsGameOver(false);
-      setResult(null);
-      setRematchRequested(false);
-    });
-
-    socket.on('rematch-requested', () => {
-      setRematchRequested(true);
-    });
-
-    socket.on('player-left', ({ color }) => {
-       setOpponentName('Opponent Left');
-    });
-
-    return () => {
-      socket.off('move-sync');
-      socket.off('room-joined');
-      socket.off('player-joined');
-      socket.off('game-reset');
-      socket.off('rematch-requested');
-      socket.off('player-left');
-    };
-  }, [socket, playerColor]);
-
   function onDrop(sourceSquare: string, targetSquare: string) {
     if (!isMyTurn || isGameOver) return false;
 
     try {
-      const move = game.move({
+      const moveObj = {
         from: sourceSquare,
         to: targetSquare,
-        promotion: 'q', // always promote to queen for simplicity
-      });
+        promotion: 'q',
+      };
+      const move = game.move(moveObj);
 
       if (move) {
-        socket.emit('make-move', { roomId, move });
-        setLastMove(move);
+        setGame(new Chess(game.fen()));
+        const newHistory = [...history, move];
+        setHistory(newHistory);
+        triggerSound(move);
+        lastHistoryLengthRef.current = newHistory.length;
+
+        fetch('/api/make-move', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomId, playerId, move: moveObj })
+        });
+        
         return true;
       }
     } catch (e) {
@@ -207,8 +208,14 @@ export function ChessGame({ socket, roomId, playerColor, onLeave }: ChessGamePro
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleRematch = () => {
-    socket.emit('request-rematch', roomId);
+  const handleRematch = async () => {
+    try {
+      await fetch('/api/request-rematch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, playerId })
+      });
+    } catch (e) {}
   };
 
   return (
@@ -248,7 +255,7 @@ export function ChessGame({ socket, roomId, playerColor, onLeave }: ChessGamePro
           </div>
         </div>
 
-        {/* Opponent Info (Top on mobile) */}
+        {/* Opponent Info */}
         <div className="flex items-center justify-between p-3 sm:p-4 bg-white/5 border border-white/10 rounded-2xl sm:rounded-3xl">
            <div className="flex items-center gap-2 sm:gap-3">
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-white/10 flex items-center justify-center">
@@ -387,7 +394,7 @@ export function ChessGame({ socket, roomId, playerColor, onLeave }: ChessGamePro
           </div>
         </div>
 
-        {/* User Info (Bottom on mobile) */}
+        {/* User Info */}
         <div className="flex items-center justify-between p-3 sm:p-4 bg-white/5 border border-white/10 rounded-2xl sm:rounded-3xl">
            <div className="flex items-center gap-2 sm:gap-3">
               <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-orange-500 flex items-center justify-center font-bold text-xs sm:text-sm shadow-lg shadow-orange-500/20">
@@ -433,7 +440,7 @@ export function ChessGame({ socket, roomId, playerColor, onLeave }: ChessGamePro
 
         <div className="flex-1 bg-white/5 border border-white/10 rounded-3xl overflow-hidden flex flex-col">
            {showChat ? (
-             <Chat socket={socket} roomId={roomId} playerColor={playerColor} />
+             <Chat playerId={playerId} roomId={roomId} playerColor={playerColor} />
            ) : (
              <div className="flex-1 flex flex-col">
                 <div className="p-4 border-b border-white/5 flex items-center justify-between">
